@@ -1,4 +1,4 @@
-class PixelDisplay {
+export class PixelDisplay {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private displayWidth: number = 64;
@@ -58,9 +58,6 @@ class PixelDisplay {
         [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
@@ -160,6 +157,11 @@ class PixelDisplay {
     }
 
     private shoot(): void {
+        // Check cooldown before creating bullet
+        if (Date.now() - this.lastShotTime <= this.shotCooldown) {
+            return;
+        }
+        
         // Create a new bullet at the center of the spaceship
         this.playerBullets.push({
             x: this.spaceshipX + 2, // Center of the spaceship
@@ -212,38 +214,30 @@ class PixelDisplay {
     }
 
     private updateAliens(): void {
-        if (this.level === 4) {
-            // Update boss movement
-            this.bossX += this.bossSpeed * this.bossDirection;
-            if (this.bossX <= 0 || this.bossX >= this.displayWidth - 28) { // Adjusted for new size
-                this.bossDirection *= -1;
-            }
-
-            // Boss shooting
-            if (Date.now() - this.bossLastShotTime > this.bossShotCooldown) {
-                this.alienBullets.push({
-                    x: this.bossX + 14, // Center of the boss (28/2)
-                    y: this.bossY + 20  // Bottom of the boss
-                });
-                this.bossLastShotTime = Date.now();
-            }
-        } else {
-            // Regular alien movement
-            if (this.frameCount % this.alienMoveInterval === 0) {
-                for (const alien of this.aliens) {
-                    alien.x += this.alienSpeed * alien.direction;
-
-                    if (alien.x <= 0 || alien.x >= this.displayWidth - 5) {
-                        alien.direction *= -1;
-                        alien.y += 1;
-                    }
-
-                    if (Math.random() < this.alienShotChance && 
-                        Date.now() - alien.lastShotTime > this.alienShotCooldown) {
-                        this.alienShoot(alien);
-                        alien.lastShotTime = Date.now();
-                    }
+        // Check if it's time to move aliens
+        if (this.frameCount % this.alienMoveInterval === 0) {
+            // Update alien positions first
+            for (const alien of this.aliens) {
+                // Check if current position is at edge
+                if (alien.x <= 0) {
+                    alien.direction = 1; // Change to right when hitting left edge
+                    alien.y += 1;
+                } else if (alien.x >= this.displayWidth - 5) {
+                    alien.direction = -1; // Change to left when hitting right edge
+                    alien.y += 1;
                 }
+                
+                // Move the alien in its current direction
+                alien.x += this.alienSpeed * alien.direction;
+            }
+
+            // Random alien shooting
+            if (Math.random() < 0.01) { // 1% chance per frame
+                const randomAlien = this.aliens[Math.floor(Math.random() * this.aliens.length)];
+                this.alienBullets.push({
+                    x: randomAlien.x + 2,
+                    y: randomAlien.y + 2
+                });
             }
         }
     }
