@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>64x32 Pixel Display</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+        }
+        .display-container {
+            width: 800px;
+            height: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #333;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <div class="display-container">
+        <canvas id="canvas" width="64" height="32"></canvas>
+    </div>
+    <script type="module" src="./index.ts"></script>
+</body>
+</html> 
