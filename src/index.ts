@@ -84,6 +84,9 @@ export class PixelDisplay {
     }
 
     private initializeAliens(): void {
+        // Clear existing aliens
+        this.aliens = [];
+        
         // Create a grid of 10 aliens (2 rows of 5)
         const rows = 2;
         const cols = 5;
@@ -214,30 +217,47 @@ export class PixelDisplay {
     }
 
     private updateAliens(): void {
-        // Check if it's time to move aliens
-        if (this.frameCount % this.alienMoveInterval === 0) {
-            // Update alien positions first
-            for (const alien of this.aliens) {
-                // Check if current position is at edge
-                if (alien.x <= 0) {
-                    alien.direction = 1; // Change to right when hitting left edge
-                    alien.y += 1;
-                } else if (alien.x >= this.displayWidth - 5) {
-                    alien.direction = -1; // Change to left when hitting right edge
-                    alien.y += 1;
-                }
-                
-                // Move the alien in its current direction
-                alien.x += this.alienSpeed * alien.direction;
+        if (this.level === 4) {
+            // Update boss movement
+            this.bossX += this.bossSpeed * this.bossDirection;
+            if (this.bossX <= 0 || this.bossX >= this.displayWidth - 28) { // Adjusted for new size
+                this.bossDirection *= -1;
             }
 
-            // Random alien shooting
-            if (Math.random() < 0.01) { // 1% chance per frame
-                const randomAlien = this.aliens[Math.floor(Math.random() * this.aliens.length)];
+            // Boss shooting
+            if (Date.now() - this.bossLastShotTime > this.bossShotCooldown) {
                 this.alienBullets.push({
-                    x: randomAlien.x + 2,
-                    y: randomAlien.y + 2
+                    x: this.bossX + 14, // Center of the boss (28/2)
+                    y: this.bossY + 20  // Bottom of the boss
                 });
+                this.bossLastShotTime = Date.now();
+            }
+        } else {
+            // Check if it's time to move aliens
+            if (this.frameCount % this.alienMoveInterval === 0) {
+                // Update alien positions first
+                for (const alien of this.aliens) {
+                    // Check if current position is at edge
+                    if (alien.x <= 0) {
+                        alien.direction = 1; // Change to right when hitting left edge
+                        alien.y += 1;
+                    } else if (alien.x >= this.displayWidth - 5) {
+                        alien.direction = -1; // Change to left when hitting right edge
+                        alien.y += 1;
+                    }
+                    
+                    // Move the alien in its current direction
+                    alien.x += this.alienSpeed * alien.direction;
+                }
+
+                // Random alien shooting
+                if (Math.random() < 0.01) { // 1% chance per frame
+                    const randomAlien = this.aliens[Math.floor(Math.random() * this.aliens.length)];
+                    this.alienBullets.push({
+                        x: randomAlien.x + 2,
+                        y: randomAlien.y + 2
+                    });
+                }
             }
         }
     }
@@ -353,6 +373,11 @@ export class PixelDisplay {
                             this.level++;
                             // Increase alien speed by 25% each level
                             this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
+                            // Clear all bullets and reset game state when transitioning to next level
+                            this.playerBullets = [];
+                            this.alienBullets = [];
+                            this.aliens = []; // Clear existing aliens
+                            this.lastShotTime = 0; // Reset shot cooldown
                         }
                         
                         return false;
@@ -516,6 +541,8 @@ export class PixelDisplay {
             if (Date.now() - this.levelTransitionTime > 2000) {
                 this.levelTransition = false;
                 this.initializeAliens();
+                // Reset spaceship position to center
+                this.spaceshipX = 32;
             }
             return;
         }
