@@ -32,6 +32,12 @@ export class PixelDisplay {
     private audioContext: AudioContext;
     private oscillator: OscillatorNode | null = null;
     private gainNode: GainNode | null = null;
+    private heartbeatOscillator: OscillatorNode | null = null;
+    private heartbeatGainNode: GainNode | null = null;
+    private isHeartbeatPlaying: boolean = false;
+    private crabOscillator: OscillatorNode | null = null;
+    private crabGainNode: GainNode | null = null;
+    private isCrabSoundPlaying: boolean = false;
 
     // Spaceship bitmap (5x5 pixels)
     private spaceship: number[][] = [
@@ -331,6 +337,116 @@ export class PixelDisplay {
         });
     }
 
+    private playHeartbeatSound(): void {
+        // Always stop any existing heartbeat before starting a new one
+        this.stopHeartbeatSound();
+        
+        // Create oscillator and gain node for heartbeat
+        this.heartbeatOscillator = this.audioContext.createOscillator();
+        this.heartbeatGainNode = this.audioContext.createGain();
+        
+        // Configure oscillator
+        this.heartbeatOscillator.type = 'sine';
+        this.heartbeatOscillator.frequency.setValueAtTime(110, this.audioContext.currentTime); // A2 note
+        
+        // Configure gain with a pulsing effect
+        this.heartbeatGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        
+        // Connect nodes
+        this.heartbeatOscillator.connect(this.heartbeatGainNode);
+        this.heartbeatGainNode.connect(this.audioContext.destination);
+        
+        // Start the oscillator
+        this.heartbeatOscillator.start();
+        this.isHeartbeatPlaying = true;
+        
+        // Create the heartbeat rhythm
+        const createPulse = () => {
+            if (!this.isHeartbeatPlaying) return;
+            
+            const now = this.audioContext.currentTime;
+            
+            // First beat
+            this.heartbeatGainNode!.gain.setValueAtTime(0, now);
+            this.heartbeatGainNode!.gain.linearRampToValueAtTime(0.1, now + 0.1);
+            this.heartbeatGainNode!.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            
+            // Second beat (after a short pause)
+            this.heartbeatGainNode!.gain.setValueAtTime(0, now + 0.3);
+            this.heartbeatGainNode!.gain.linearRampToValueAtTime(0.1, now + 0.4);
+            this.heartbeatGainNode!.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            
+            // Schedule next heartbeat
+            setTimeout(createPulse, 1000); // 1 second between heartbeats
+        };
+        
+        createPulse();
+    }
+
+    private stopHeartbeatSound(): void {
+        if (!this.isHeartbeatPlaying) return;
+        
+        this.isHeartbeatPlaying = false;
+        
+        if (this.heartbeatOscillator) {
+            this.heartbeatOscillator.stop();
+            this.heartbeatOscillator = null;
+        }
+        if (this.heartbeatGainNode) {
+            this.heartbeatGainNode.disconnect();
+            this.heartbeatGainNode = null;
+        }
+    }
+
+    private playCrabSound(): void {
+        if (this.isCrabSoundPlaying) return;
+        
+        // Create oscillator and gain node for crab sound
+        this.crabOscillator = this.audioContext.createOscillator();
+        this.crabGainNode = this.audioContext.createGain();
+        
+        // Configure oscillator with a low, menacing frequency
+        this.crabOscillator.type = 'sawtooth';
+        this.crabOscillator.frequency.setValueAtTime(55, this.audioContext.currentTime); // A1 note
+        
+        // Add some frequency modulation for a more menacing sound
+        this.crabOscillator.frequency.exponentialRampToValueAtTime(44, this.audioContext.currentTime + 0.5);
+        this.crabOscillator.frequency.exponentialRampToValueAtTime(55, this.audioContext.currentTime + 1);
+        
+        // Configure gain with a slow attack and sustain
+        this.crabGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        this.crabGainNode.gain.linearRampToValueAtTime(0.1, this.audioContext.currentTime + 0.5);
+        this.crabGainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime + 1);
+        
+        // Connect nodes
+        this.crabOscillator.connect(this.crabGainNode);
+        this.crabGainNode.connect(this.audioContext.destination);
+        
+        // Start the oscillator
+        this.crabOscillator.start();
+        this.isCrabSoundPlaying = true;
+        
+        // Schedule the sound to stop after 2 seconds
+        setTimeout(() => {
+            this.stopCrabSound();
+        }, 2000);
+    }
+
+    private stopCrabSound(): void {
+        if (!this.isCrabSoundPlaying) return;
+        
+        this.isCrabSoundPlaying = false;
+        
+        if (this.crabOscillator) {
+            this.crabOscillator.stop();
+            this.crabOscillator = null;
+        }
+        if (this.crabGainNode) {
+            this.crabGainNode.disconnect();
+            this.crabGainNode = null;
+        }
+    }
+
     private checkCollisions(): void {
         if (this.level === 4) {
             // Check player bullets hitting boss
@@ -345,6 +461,7 @@ export class PixelDisplay {
                         this.levelTransitionTime = Date.now();
                         this.level++;
                         this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
+                        this.stopCrabSound();
                     }
                     
                     return false; // Remove the bullet
@@ -384,6 +501,7 @@ export class PixelDisplay {
 
             // Check if all aliens are destroyed
             if (this.aliens.length === 0) {
+                this.stopHeartbeatSound();
                 this.levelTransition = true;
                 this.levelTransitionTime = Date.now();
                 this.level++;
@@ -396,6 +514,8 @@ export class PixelDisplay {
                 if (this.level < 4) {
                     this.initializeAliens();
                 }
+            } else if (!this.isHeartbeatPlaying && !this.levelTransition) {
+                this.playHeartbeatSound();
             }
 
             // Check alien bullets hitting spaceship
@@ -541,6 +661,10 @@ export class PixelDisplay {
             if (Date.now() - this.levelTransitionTime > 2000) {
                 this.levelTransition = false;
                 this.initializeAliens();
+                // Start heartbeat after level transition ends
+                if (this.level < 4) {
+                    this.playHeartbeatSound();
+                }
                 // Reset spaceship position to center
                 this.spaceshipX = 32;
             }
@@ -601,6 +725,11 @@ export class PixelDisplay {
                     }
                 }
             }
+
+            // Play crab sound when boss first appears
+            if (!this.isCrabSoundPlaying && this.bossHealth === 50) {
+                this.playCrabSound();
+            }
         } else {
             // Draw regular aliens
             this.ctx.fillStyle = '#0F0';
@@ -655,9 +784,14 @@ export class PixelDisplay {
         this.lastShotTime = 0;
         this.alienSpeed = 0.25; // Reset to base speed
         
+        // Stop any existing sounds
+        this.stopHeartbeatSound();
+        this.stopCrabSound();
+        
         // Reinitialize aliens
         this.aliens = [];
         this.initializeAliens();
+        this.playHeartbeatSound();
         this.bossHealth = 50;
         this.bossX = 0;
         this.bossY = 2;
