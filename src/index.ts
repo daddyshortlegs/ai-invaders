@@ -38,6 +38,10 @@ export class PixelDisplay {
     private crabOscillator: OscillatorNode | null = null;
     private crabGainNode: GainNode | null = null;
     private isCrabSoundPlaying: boolean = false;
+    private victoryOscillator: OscillatorNode | null = null;
+    private victoryGainNode: GainNode | null = null;
+    private isVictorySoundPlaying: boolean = false;
+    private gameWon: boolean = false;
 
     // Spaceship bitmap (5x5 pixels)
     private spaceship: number[][] = [
@@ -64,7 +68,6 @@ export class PixelDisplay {
         [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
         [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
@@ -447,6 +450,56 @@ export class PixelDisplay {
         }
     }
 
+    private playVictorySound(): void {
+        if (this.isVictorySoundPlaying) return;
+        
+        // Create oscillator and gain node for victory sound
+        this.victoryOscillator = this.audioContext.createOscillator();
+        this.victoryGainNode = this.audioContext.createGain();
+        
+        // Create a convolver node for echo effect
+        const convolver = this.audioContext.createConvolver();
+        
+        // Configure oscillator with a triumphant frequency sweep
+        this.victoryOscillator.type = 'sine';
+        this.victoryOscillator.frequency.setValueAtTime(220, this.audioContext.currentTime); // A3 note
+        this.victoryOscillator.frequency.exponentialRampToValueAtTime(880, this.audioContext.currentTime + 0.5); // A5 note
+        
+        // Configure gain with a dramatic envelope
+        this.victoryGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        this.victoryGainNode.gain.linearRampToValueAtTime(0.2, this.audioContext.currentTime + 0.1);
+        this.victoryGainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.5);
+        
+        // Connect nodes with convolver for echo
+        this.victoryOscillator.connect(this.victoryGainNode);
+        this.victoryGainNode.connect(convolver);
+        convolver.connect(this.audioContext.destination);
+        
+        // Start the oscillator
+        this.victoryOscillator.start();
+        this.isVictorySoundPlaying = true;
+        
+        // Schedule the sound to stop after 2 seconds
+        setTimeout(() => {
+            this.stopVictorySound();
+        }, 2000);
+    }
+
+    private stopVictorySound(): void {
+        if (!this.isVictorySoundPlaying) return;
+        
+        this.isVictorySoundPlaying = false;
+        
+        if (this.victoryOscillator) {
+            this.victoryOscillator.stop();
+            this.victoryOscillator = null;
+        }
+        if (this.victoryGainNode) {
+            this.victoryGainNode.disconnect();
+            this.victoryGainNode = null;
+        }
+    }
+
     private checkCollisions(): void {
         if (this.level === 4) {
             // Check player bullets hitting boss
@@ -457,11 +510,12 @@ export class PixelDisplay {
                     this.playAlienHitSound();
                     
                     if (this.bossHealth <= 0) {
-                        this.levelTransition = true;
-                        this.levelTransitionTime = Date.now();
-                        this.level++;
-                        this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
+                        this.gameWon = true;
+                        this.gameOver = true;
                         this.stopCrabSound();
+                        this.stopHeartbeatSound();
+                        this.playExplosionSound();
+                        this.playVictorySound();
                     }
                     
                     return false; // Remove the bullet
@@ -476,6 +530,7 @@ export class PixelDisplay {
                     this.lives--;
                     if (this.lives <= 0) {
                         this.gameOver = true;
+                        this.stopHeartbeatSound();
                         this.playExplosionSound();
                     }
                     return false; // Remove the bullet
@@ -540,112 +595,207 @@ export class PixelDisplay {
         this.ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
 
         if (this.gameOver) {
-            // Draw pixelated GAME OVER text
-            this.ctx.fillStyle = '#0F0';
-            
-            // Define each letter as a 5x7 grid
-            const G = [
-                [1,1,1,1,1],
-                [1,0,0,0,0],
-                [1,0,0,0,0],
-                [1,0,1,1,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,1,1,1,1]
-            ];
-            
-            const A = [
-                [0,1,1,1,0],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,1,1,1,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1]
-            ];
-            
-            const M = [
-                [1,0,0,0,1],
-                [1,1,0,1,1],
-                [1,0,1,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1]
-            ];
-            
-            const E = [
-                [1,1,1,1,1],
-                [1,0,0,0,0],
-                [1,0,0,0,0],
-                [1,1,1,1,0],
-                [1,0,0,0,0],
-                [1,0,0,0,0],
-                [1,1,1,1,1]
-            ];
-            
-            const O = [
-                [0,1,1,1,0],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [0,1,1,1,0]
-            ];
-            
-            const V = [
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [0,1,0,1,0],
-                [0,1,0,1,0],
-                [0,0,1,0,0]
-            ];
-            
-            const R = [
-                [1,1,1,1,0],
-                [1,0,0,0,1],
-                [1,0,0,0,1],
-                [1,1,1,1,0],
-                [1,0,1,0,0],
-                [1,0,0,1,0],
-                [1,0,0,0,1]
-            ];
+            if (this.gameWon) {
+                // Draw pixelated YOU WIN text
+                this.ctx.fillStyle = '#0F0';
+                
+                // Define each letter as a 5x7 grid
+                const Y = [
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [0,1,0,1,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0]
+                ];
+                
+                const O = [
+                    [0,1,1,1,0],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [0,1,1,1,0]
+                ];
+                
+                const U = [
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [0,1,1,1,0]
+                ];
+                
+                const W = [
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,1,0,1],
+                    [1,0,1,0,1],
+                    [1,1,0,1,1],
+                    [1,0,0,0,1]
+                ];
+                
+                const I = [
+                    [1,1,1,1,1],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [0,0,1,0,0],
+                    [1,1,1,1,1]
+                ];
+                
+                const N = [
+                    [1,0,0,0,1],
+                    [1,1,0,0,1],
+                    [1,0,1,0,1],
+                    [1,0,0,1,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1]
+                ];
 
-            // Draw "GAME"
-            const drawLetter = (letter: number[][], x: number, y: number) => {
-                for (let row = 0; row < 7; row++) {
-                    for (let col = 0; col < 5; col++) {
-                        if (letter[row][col] === 1) {
-                            this.ctx.fillRect(x + col, y + row, 1, 1);
+                // Draw "YOU WIN"
+                const drawLetter = (letter: number[][], x: number, y: number) => {
+                    for (let row = 0; row < 7; row++) {
+                        for (let col = 0; col < 5; col++) {
+                            if (letter[row][col] === 1) {
+                                this.ctx.fillRect(x + col, y + row, 1, 1);
+                            }
                         }
                     }
-                }
-            };
+                };
 
-            const startX = (this.displayWidth - 30) / 2;
-            const startY = (this.displayHeight - 7) / 2;
+                const startX = (this.displayWidth - 30) / 2;
+                const startY = (this.displayHeight - 7) / 2;
 
-            // Draw GAME
-            drawLetter(G, startX, startY);
-            drawLetter(A, startX + 6, startY);
-            drawLetter(M, startX + 12, startY);
-            drawLetter(E, startX + 18, startY);
+                // Draw YOU
+                drawLetter(Y, startX, startY);
+                drawLetter(O, startX + 6, startY);
+                drawLetter(U, startX + 12, startY);
 
-            // Draw OVER
-            drawLetter(O, startX, startY + 9);
-            drawLetter(V, startX + 6, startY + 9);
-            drawLetter(E, startX + 12, startY + 9);
-            drawLetter(R, startX + 18, startY + 9);
+                // Draw WIN
+                drawLetter(W, startX, startY + 9);
+                drawLetter(I, startX + 6, startY + 9);
+                drawLetter(N, startX + 12, startY + 9);
 
-            // Draw "Press SPACE to restart" message
-            const restartMessage = "Press SPACE to restart";
-            this.ctx.font = '8px monospace';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(restartMessage, this.displayWidth / 2, startY + 20);
-            
+                // Draw "Press SPACE to restart" message
+                const restartMessage = "Press SPACE to restart";
+                this.ctx.font = '8px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(restartMessage, this.displayWidth / 2, startY + 20);
+            } else {
+                // Draw pixelated GAME OVER text
+                this.ctx.fillStyle = '#0F0';
+                
+                // Define each letter as a 5x7 grid
+                const G = [
+                    [1,1,1,1,1],
+                    [1,0,0,0,0],
+                    [1,0,0,0,0],
+                    [1,0,1,1,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,1,1,1,1]
+                ];
+                
+                const A = [
+                    [0,1,1,1,0],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,1,1,1,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1]
+                ];
+                
+                const M = [
+                    [1,0,0,0,1],
+                    [1,1,0,1,1],
+                    [1,0,1,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1]
+                ];
+                
+                const E = [
+                    [1,1,1,1,1],
+                    [1,0,0,0,0],
+                    [1,0,0,0,0],
+                    [1,1,1,1,0],
+                    [1,0,0,0,0],
+                    [1,0,0,0,0],
+                    [1,1,1,1,1]
+                ];
+                
+                const O = [
+                    [0,1,1,1,0],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [0,1,1,1,0]
+                ];
+                
+                const V = [
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [0,1,0,1,0],
+                    [0,1,0,1,0],
+                    [0,0,1,0,0]
+                ];
+                
+                const R = [
+                    [1,1,1,1,0],
+                    [1,0,0,0,1],
+                    [1,0,0,0,1],
+                    [1,1,1,1,0],
+                    [1,0,1,0,0],
+                    [1,0,0,1,0],
+                    [1,0,0,0,1]
+                ];
+
+                // Draw "GAME"
+                const drawLetter = (letter: number[][], x: number, y: number) => {
+                    for (let row = 0; row < 7; row++) {
+                        for (let col = 0; col < 5; col++) {
+                            if (letter[row][col] === 1) {
+                                this.ctx.fillRect(x + col, y + row, 1, 1);
+                            }
+                        }
+                    }
+                };
+
+                const startX = (this.displayWidth - 30) / 2;
+                const startY = (this.displayHeight - 7) / 2;
+
+                // Draw GAME
+                drawLetter(G, startX, startY);
+                drawLetter(A, startX + 6, startY);
+                drawLetter(M, startX + 12, startY);
+                drawLetter(E, startX + 18, startY);
+
+                // Draw OVER
+                drawLetter(O, startX, startY + 9);
+                drawLetter(V, startX + 6, startY + 9);
+                drawLetter(E, startX + 12, startY + 9);
+                drawLetter(R, startX + 18, startY + 9);
+
+                // Draw "Press SPACE to restart" message
+                const restartMessage = "Press SPACE to restart";
+                this.ctx.font = '8px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(restartMessage, this.displayWidth / 2, startY + 20);
+            }
             return;
         }
 
@@ -775,6 +925,7 @@ export class PixelDisplay {
     private restartGame(): void {
         // Reset game state
         this.gameOver = false;
+        this.gameWon = false;
         this.level = 1;
         this.levelTransition = false;
         this.lives = 5;
@@ -787,6 +938,7 @@ export class PixelDisplay {
         // Stop any existing sounds
         this.stopHeartbeatSound();
         this.stopCrabSound();
+        this.stopVictorySound();
         
         // Reinitialize aliens
         this.aliens = [];
