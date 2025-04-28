@@ -378,6 +378,11 @@ export class PixelDisplay {
                             this.alienBullets = [];
                             this.aliens = []; // Clear existing aliens
                             this.lastShotTime = 0; // Reset shot cooldown
+                            
+                            // Initialize new aliens for the next level
+                            if (this.level < 4) {
+                                this.initializeAliens();
+                            }
                         }
                         
                         return false;
@@ -399,18 +404,6 @@ export class PixelDisplay {
                 }
                 return true;
             });
-
-            // Check if any alien has reached the bottom
-            for (const alien of this.aliens) {
-                if (alien.y >= this.spaceshipY) {
-                    this.lives--;
-                    if (this.lives <= 0) {
-                        this.gameOver = true;
-                        this.playExplosionSound();
-                    }
-                    break;
-                }
-            }
         }
     }
 
