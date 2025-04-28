@@ -38,8 +38,8 @@ export class PixelDisplay {
         [0, 0, 1, 0, 0],
         [0, 1, 1, 1, 0],
         [1, 1, 1, 1, 1],
-        [0, 1, 1, 1, 0],
-        [0, 0, 1, 0, 0]
+        [1, 1, 1, 1, 1],
+        [1, 0, 1, 0, 1]
     ];
 
     // Alien bitmap (5x5 pixels)
@@ -248,6 +248,15 @@ export class PixelDisplay {
                     
                     // Move the alien in its current direction
                     alien.x += this.alienSpeed * alien.direction;
+
+                    // Check for collision with spaceship
+                    if (alien.y + 5 >= this.spaceshipY && // Alien bottom edge reaches spaceship top
+                        alien.x + 5 > this.spaceshipX && // Alien right edge is right of spaceship left
+                        alien.x < this.spaceshipX + 5) { // Alien left edge is left of spaceship right
+                        this.gameOver = true;
+                        this.playExplosionSound();
+                        return;
+                    }
                 }
 
                 // Random alien shooting
@@ -338,7 +347,7 @@ export class PixelDisplay {
                         this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
                     }
                     
-                    return false;
+                    return false; // Remove the bullet
                 }
                 return true;
             });
@@ -352,44 +361,42 @@ export class PixelDisplay {
                         this.gameOver = true;
                         this.playExplosionSound();
                     }
-                    return false;
+                    return false; // Remove the bullet
                 }
                 return true;
             });
         } else {
             // Check player bullets hitting aliens
-            this.playerBullets = this.playerBullets.filter(bullet => {
-                for (let i = this.aliens.length - 1; i >= 0; i--) {
-                    const alien = this.aliens[i];
+            for (let bi = this.playerBullets.length - 1; bi >= 0; bi--) {
+                const bullet = this.playerBullets[bi];
+                for (let ai = this.aliens.length - 1; ai >= 0; ai--) {
+                    const alien = this.aliens[ai];
                     if (bullet.x >= alien.x && bullet.x < alien.x + 5 &&
                         bullet.y >= alien.y && bullet.y < alien.y + 5) {
-                        this.aliens.splice(i, 1);
+                        // Remove the alien and bullet
+                        this.aliens.splice(ai, 1);
+                        this.playerBullets.splice(bi, 1);
                         this.playAlienHitSound();
-                        
-                        // Check if all aliens are destroyed
-                        if (this.aliens.length === 0) {
-                            this.levelTransition = true;
-                            this.levelTransitionTime = Date.now();
-                            this.level++;
-                            // Increase alien speed by 25% each level
-                            this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
-                            // Clear all bullets and reset game state when transitioning to next level
-                            this.playerBullets = [];
-                            this.alienBullets = [];
-                            this.aliens = []; // Clear existing aliens
-                            this.lastShotTime = 0; // Reset shot cooldown
-                            
-                            // Initialize new aliens for the next level
-                            if (this.level < 4) {
-                                this.initializeAliens();
-                            }
-                        }
-                        
-                        return false;
+                        break; // Break since this bullet has been removed
                     }
                 }
-                return true;
-            });
+            }
+
+            // Check if all aliens are destroyed
+            if (this.aliens.length === 0) {
+                this.levelTransition = true;
+                this.levelTransitionTime = Date.now();
+                this.level++;
+                // Increase alien speed by 25% each level
+                this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
+                // Clear all bullets and reset game state when transitioning to next level
+                this.playerBullets = [];
+                this.alienBullets = [];
+                // Initialize new aliens for the next level
+                if (this.level < 4) {
+                    this.initializeAliens();
+                }
+            }
 
             // Check alien bullets hitting spaceship
             this.alienBullets = this.alienBullets.filter(bullet => {
@@ -400,7 +407,7 @@ export class PixelDisplay {
                         this.gameOver = true;
                         this.playExplosionSound();
                     }
-                    return false;
+                    return false; // Remove the bullet
                 }
                 return true;
             });

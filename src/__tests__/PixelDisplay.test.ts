@@ -189,10 +189,22 @@ describe('PixelDisplay', () => {
       // @ts-ignore - accessing private property for testing
       display.audioContext.createGain = jest.fn(() => mockGainNode);
       
-      // @ts-ignore - accessing private property for testing
-      display.playerBullets = [{ x: 10, y: 5 }];
+      // Mock initializeAliens to prevent automatic alien creation
+      // @ts-ignore - accessing private method for testing
+      const originalInitializeAliens = display.initializeAliens;
+      // @ts-ignore - accessing private method for testing
+      display.initializeAliens = jest.fn();
+      
+      // Reset game state
+      // @ts-ignore - accessing private method for testing
+      display.restartGame();
+      
+      // Set up collision scenario with a single alien and bullet
       // @ts-ignore - accessing private property for testing
       display.aliens = [{ x: 8, y: 4, direction: 1, lastShotTime: 0 }];
+      // @ts-ignore - accessing private property for testing
+      display.playerBullets = [{ x: 10, y: 5 }];
+      
       // @ts-ignore - accessing private method for testing
       display.checkCollisions();
       
@@ -200,6 +212,10 @@ describe('PixelDisplay', () => {
       expect(display.aliens.length).toBe(0);
       // @ts-ignore - accessing private property for testing
       expect(display.playerBullets.length).toBe(0);
+      
+      // Restore original initializeAliens
+      // @ts-ignore - accessing private method for testing
+      display.initializeAliens = originalInitializeAliens;
     });
 
     it('should detect collision between alien bullet and spaceship', () => {
