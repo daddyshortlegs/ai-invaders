@@ -1,3 +1,6 @@
+import { AudioManager } from './AudioManager';
+import { GameState } from './GameState';
+
 export class PixelDisplay {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
@@ -17,31 +20,23 @@ export class PixelDisplay {
     private alienMoveInterval: number = 4; // Only move aliens every 4 frames
     private alienShotCooldown: number = 2000; // Increased from 1000ms to 2000ms to halve shooting speed
     private alienShotChance: number = 0.05; // Reduced from 0.1 to 0.05 (5% chance)
-    private gameOver: boolean = false;
-    private level: number = 1;
-    private levelTransition: boolean = false;
+    private gameState: GameState;
+    private audioManager: AudioManager;
     private levelTransitionTime: number = 0;
-    private lives: number = 5;
-    private bossHealth: number = 50;
     private bossX: number = 0;
     private bossY: number = 2;
     private bossDirection: number = 1;
     private bossSpeed: number = 0.5;
     private bossLastShotTime: number = 0;
     private bossShotCooldown: number = 1000;
-    private audioContext: AudioContext;
-    private oscillator: OscillatorNode | null = null;
-    private gainNode: GainNode | null = null;
-    private heartbeatOscillator: OscillatorNode | null = null;
-    private heartbeatGainNode: GainNode | null = null;
-    private isHeartbeatPlaying: boolean = false;
-    private crabOscillator: OscillatorNode | null = null;
-    private crabGainNode: GainNode | null = null;
-    private isCrabSoundPlaying: boolean = false;
-    private victoryOscillator: OscillatorNode | null = null;
-    private victoryGainNode: GainNode | null = null;
-    private isVictorySoundPlaying: boolean = false;
+    private gameOver: boolean = false;
+    private level: number = 1;
+    private levelTransition: boolean = false;
+    private lives: number = 5;
+    private bossHealth: number = 50;
     private gameWon: boolean = false;
+    private lastHeartbeatTime: number = 0;
+    private heartbeatCooldown: number = 1000; // milliseconds between heartbeats
 
     // Spaceship bitmap (5x5 pixels)
     private spaceship: number[][] = [
@@ -84,12 +79,14 @@ export class PixelDisplay {
         this.canvas.width = this.displayWidth;
         this.canvas.height = this.displayHeight;
         
-        // Initialize audio context
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.gameState = new GameState();
+        this.audioManager = new AudioManager();
         
         this.initializeAliens();
-        this.setupEventListeners();
-        this.startAnimation();
+        // Wait for setupEventListeners to complete before starting animation
+        this.setupEventListeners().then(() => {
+            this.startAnimation();
+        });
     }
 
     private initializeAliens(): void {
@@ -114,20 +111,30 @@ export class PixelDisplay {
         }
     }
 
-    private setupEventListeners(): void {
+    private async setupEventListeners(): Promise<void> {
+        // Preload sounds
+        await this.audioManager.preloadSounds([
+            'shoot',
+            'alien_hit',
+            'explosion',
+            'heartbeat',
+            'crab',
+            'victory'
+        ]);
+
         window.addEventListener('keydown', (e) => {
-            if (this.gameOver && e.key === ' ') {
+            if (this.gameState.gameOver && e.key === ' ') {
                 this.restartGame();
                 return;
             }
             
             // Cheat code to jump to boss battle
             if (e.key.toLowerCase() === 'c') {
-                this.level = 4;
-                this.levelTransition = true;
-                this.levelTransitionTime = Date.now();
+                this.gameState.level = 4;
+                this.gameState.levelTransition = true;
+                this.gameState.isBossLevel = true;
                 this.aliens = []; // Clear regular aliens
-                this.bossHealth = 50; // Reset boss health
+                this.gameState.bossHealth = 50; // Reset boss health
                 this.bossX = 0; // Reset boss position
                 this.bossY = 2;
                 this.bossDirection = 1;
@@ -146,48 +153,23 @@ export class PixelDisplay {
         });
     }
 
-    private playShootSound(): void {
-        // Create oscillator and gain node
-        this.oscillator = this.audioContext.createOscillator();
-        this.gainNode = this.audioContext.createGain();
-        
-        // Configure oscillator
-        this.oscillator.type = 'square';
-        this.oscillator.frequency.setValueAtTime(880, this.audioContext.currentTime); // A5 note
-        
-        // Configure gain
-        this.gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        this.gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
-        
-        // Connect nodes
-        this.oscillator.connect(this.gainNode);
-        this.gainNode.connect(this.audioContext.destination);
-        
-        // Play sound
-        this.oscillator.start();
-        this.oscillator.stop(this.audioContext.currentTime + 0.1);
-    }
-
     private shoot(): void {
-        // Check cooldown before creating bullet
         if (Date.now() - this.lastShotTime <= this.shotCooldown) {
             return;
         }
         
-        // Create a new bullet at the center of the spaceship
         this.playerBullets.push({
-            x: this.spaceshipX + 2, // Center of the spaceship
-            y: this.spaceshipY - 1  // Just above the spaceship
+            x: this.spaceshipX + 2,
+            y: this.spaceshipY - 1
         });
         this.lastShotTime = Date.now();
         
-        // Play shooting sound
-        this.playShootSound();
+        this.audioManager.playSound('shoot');
     }
 
     private startAnimation(): void {
         const animate = () => {
-            if (!this.gameOver) {
+            if (!this.gameState.gameOver) {
                 this.updateSpaceshipPosition();
                 this.updateBullets();
                 this.updateAliens();
@@ -226,7 +208,7 @@ export class PixelDisplay {
     }
 
     private updateAliens(): void {
-        if (this.level === 4) {
+        if (this.gameState.level === 4) {
             // Update boss movement
             this.bossX += this.bossSpeed * this.bossDirection;
             if (this.bossX <= 0 || this.bossX >= this.displayWidth - 28) { // Adjusted for new size
@@ -262,7 +244,7 @@ export class PixelDisplay {
                     if (alien.y + 5 >= this.spaceshipY && // Alien bottom edge reaches spaceship top
                         alien.x + 5 > this.spaceshipX && // Alien right edge is right of spaceship left
                         alien.x < this.spaceshipX + 5) { // Alien left edge is left of spaceship right
-                        this.gameOver = true;
+                        this.gameState.gameOver = true;
                         this.playExplosionSound();
                         return;
                     }
@@ -281,237 +263,52 @@ export class PixelDisplay {
     }
 
     private playAlienHitSound(): void {
-        // Create oscillator and gain node
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
-        
-        // Configure oscillator
-        oscillator.type = 'sawtooth'; // Different waveform for a distinct sound
-        oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
-        
-        // Configure gain with a quick attack and decay
-        gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.1, this.audioContext.currentTime + 0.05);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
-        
-        // Connect nodes
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        
-        // Play sound
-        oscillator.start();
-        oscillator.stop(this.audioContext.currentTime + 0.2);
+        this.audioManager.playSound('alien_hit');
     }
 
     private playExplosionSound(): void {
-        // Create multiple oscillators for a richer sound
-        const oscillators: OscillatorNode[] = [];
-        const gainNodes: GainNode[] = [];
-        
-        // Create three oscillators with different frequencies
-        const frequencies = [110, 220, 440]; // A2, A3, A4
-        const durations = [0.3, 0.2, 0.1]; // Different durations for each oscillator
-        
-        frequencies.forEach((freq, index) => {
-            const oscillator = this.audioContext.createOscillator();
-            const gainNode = this.audioContext.createGain();
-            
-            // Configure oscillator
-            oscillator.type = 'sawtooth';
-            oscillator.frequency.setValueAtTime(freq, this.audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(freq * 0.5, this.audioContext.currentTime + durations[index]);
-            
-            // Configure gain with a quick attack and longer decay
-            gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-            gainNode.gain.linearRampToValueAtTime(0.1, this.audioContext.currentTime + 0.05);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + durations[index]);
-            
-            // Connect nodes
-            oscillator.connect(gainNode);
-            gainNode.connect(this.audioContext.destination);
-            
-            // Store references
-            oscillators.push(oscillator);
-            gainNodes.push(gainNode);
-            
-            // Play sound
-            oscillator.start();
-            oscillator.stop(this.audioContext.currentTime + durations[index]);
-        });
+        this.audioManager.playSound('explosion');
     }
 
     private playHeartbeatSound(): void {
-        // Always stop any existing heartbeat before starting a new one
-        this.stopHeartbeatSound();
-        
-        // Create oscillator and gain node for heartbeat
-        this.heartbeatOscillator = this.audioContext.createOscillator();
-        this.heartbeatGainNode = this.audioContext.createGain();
-        
-        // Configure oscillator
-        this.heartbeatOscillator.type = 'sine';
-        this.heartbeatOscillator.frequency.setValueAtTime(110, this.audioContext.currentTime); // A2 note
-        
-        // Configure gain with a pulsing effect
-        this.heartbeatGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-        
-        // Connect nodes
-        this.heartbeatOscillator.connect(this.heartbeatGainNode);
-        this.heartbeatGainNode.connect(this.audioContext.destination);
-        
-        // Start the oscillator
-        this.heartbeatOscillator.start();
-        this.isHeartbeatPlaying = true;
-        
-        // Create the heartbeat rhythm
-        const createPulse = () => {
-            if (!this.isHeartbeatPlaying) return;
-            
-            const now = this.audioContext.currentTime;
-            
-            // First beat
-            this.heartbeatGainNode!.gain.setValueAtTime(0, now);
-            this.heartbeatGainNode!.gain.linearRampToValueAtTime(0.1, now + 0.1);
-            this.heartbeatGainNode!.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-            
-            // Second beat (after a short pause)
-            this.heartbeatGainNode!.gain.setValueAtTime(0, now + 0.3);
-            this.heartbeatGainNode!.gain.linearRampToValueAtTime(0.1, now + 0.4);
-            this.heartbeatGainNode!.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-            
-            // Schedule next heartbeat
-            setTimeout(createPulse, 1000); // 1 second between heartbeats
-        };
-        
-        createPulse();
+        try {
+            this.audioManager.playSound('heartbeat');
+        } catch (error) {
+            console.warn('Error playing heartbeat sound:', error);
+        }
     }
 
     private stopHeartbeatSound(): void {
-        if (!this.isHeartbeatPlaying) return;
-        
-        this.isHeartbeatPlaying = false;
-        
-        if (this.heartbeatOscillator) {
-            this.heartbeatOscillator.stop();
-            this.heartbeatOscillator = null;
-        }
-        if (this.heartbeatGainNode) {
-            this.heartbeatGainNode.disconnect();
-            this.heartbeatGainNode = null;
-        }
+        this.audioManager.stopSound('heartbeat');
     }
 
     private playCrabSound(): void {
-        if (this.isCrabSoundPlaying) return;
-        
-        // Create oscillator and gain node for crab sound
-        this.crabOscillator = this.audioContext.createOscillator();
-        this.crabGainNode = this.audioContext.createGain();
-        
-        // Configure oscillator with a low, menacing frequency
-        this.crabOscillator.type = 'sawtooth';
-        this.crabOscillator.frequency.setValueAtTime(55, this.audioContext.currentTime); // A1 note
-        
-        // Add some frequency modulation for a more menacing sound
-        this.crabOscillator.frequency.exponentialRampToValueAtTime(44, this.audioContext.currentTime + 0.5);
-        this.crabOscillator.frequency.exponentialRampToValueAtTime(55, this.audioContext.currentTime + 1);
-        
-        // Configure gain with a slow attack and sustain
-        this.crabGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-        this.crabGainNode.gain.linearRampToValueAtTime(0.1, this.audioContext.currentTime + 0.5);
-        this.crabGainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime + 1);
-        
-        // Connect nodes
-        this.crabOscillator.connect(this.crabGainNode);
-        this.crabGainNode.connect(this.audioContext.destination);
-        
-        // Start the oscillator
-        this.crabOscillator.start();
-        this.isCrabSoundPlaying = true;
-        
-        // Schedule the sound to stop after 2 seconds
-        setTimeout(() => {
-            this.stopCrabSound();
-        }, 2000);
+        this.audioManager.playSound('crab');
     }
 
     private stopCrabSound(): void {
-        if (!this.isCrabSoundPlaying) return;
-        
-        this.isCrabSoundPlaying = false;
-        
-        if (this.crabOscillator) {
-            this.crabOscillator.stop();
-            this.crabOscillator = null;
-        }
-        if (this.crabGainNode) {
-            this.crabGainNode.disconnect();
-            this.crabGainNode = null;
-        }
+        this.audioManager.stopSound('crab');
     }
 
     private playVictorySound(): void {
-        if (this.isVictorySoundPlaying) return;
-        
-        // Create oscillator and gain node for victory sound
-        this.victoryOscillator = this.audioContext.createOscillator();
-        this.victoryGainNode = this.audioContext.createGain();
-        
-        // Create a convolver node for echo effect
-        const convolver = this.audioContext.createConvolver();
-        
-        // Configure oscillator with a triumphant frequency sweep
-        this.victoryOscillator.type = 'sine';
-        this.victoryOscillator.frequency.setValueAtTime(220, this.audioContext.currentTime); // A3 note
-        this.victoryOscillator.frequency.exponentialRampToValueAtTime(880, this.audioContext.currentTime + 0.5); // A5 note
-        
-        // Configure gain with a dramatic envelope
-        this.victoryGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-        this.victoryGainNode.gain.linearRampToValueAtTime(0.2, this.audioContext.currentTime + 0.1);
-        this.victoryGainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.5);
-        
-        // Connect nodes with convolver for echo
-        this.victoryOscillator.connect(this.victoryGainNode);
-        this.victoryGainNode.connect(convolver);
-        convolver.connect(this.audioContext.destination);
-        
-        // Start the oscillator
-        this.victoryOscillator.start();
-        this.isVictorySoundPlaying = true;
-        
-        // Schedule the sound to stop after 2 seconds
-        setTimeout(() => {
-            this.stopVictorySound();
-        }, 2000);
+        this.audioManager.playSound('victory');
     }
 
     private stopVictorySound(): void {
-        if (!this.isVictorySoundPlaying) return;
-        
-        this.isVictorySoundPlaying = false;
-        
-        if (this.victoryOscillator) {
-            this.victoryOscillator.stop();
-            this.victoryOscillator = null;
-        }
-        if (this.victoryGainNode) {
-            this.victoryGainNode.disconnect();
-            this.victoryGainNode = null;
-        }
+        this.audioManager.stopSound('victory');
     }
 
     private checkCollisions(): void {
-        if (this.level === 4) {
+        if (this.gameState.isBossLevel) {
             // Check player bullets hitting boss
             this.playerBullets = this.playerBullets.filter(bullet => {
                 if (bullet.x >= this.bossX && bullet.x < this.bossX + 28 && // Adjusted for new size
                     bullet.y >= this.bossY && bullet.y < this.bossY + 20) { // Adjusted for new size
-                    this.bossHealth--;
+                    this.gameState.bossHealth--;
                     this.playAlienHitSound();
                     
-                    if (this.bossHealth <= 0) {
-                        this.gameWon = true;
-                        this.gameOver = true;
+                    if (this.gameState.bossHealth <= 0) {
+                        this.gameState.gameOver = true;
                         this.stopCrabSound();
                         this.stopHeartbeatSound();
                         this.playExplosionSound();
@@ -527,9 +324,9 @@ export class PixelDisplay {
             this.alienBullets = this.alienBullets.filter(bullet => {
                 if (bullet.x >= this.spaceshipX && bullet.x < this.spaceshipX + 5 &&
                     bullet.y >= this.spaceshipY && bullet.y < this.spaceshipY + 5) {
-                    this.lives--;
-                    if (this.lives <= 0) {
-                        this.gameOver = true;
+                    this.gameState.decrementLives();
+                    if (this.gameState.lives <= 0) {
+                        this.gameState.gameOver = true;
                         this.stopHeartbeatSound();
                         this.playExplosionSound();
                     }
@@ -549,6 +346,7 @@ export class PixelDisplay {
                         this.aliens.splice(ai, 1);
                         this.playerBullets.splice(bi, 1);
                         this.playAlienHitSound();
+                        this.gameState.addScore(10);
                         break; // Break since this bullet has been removed
                     }
                 }
@@ -557,29 +355,30 @@ export class PixelDisplay {
             // Check if all aliens are destroyed
             if (this.aliens.length === 0) {
                 this.stopHeartbeatSound();
-                this.levelTransition = true;
+                this.gameState.levelTransition = true;
                 this.levelTransitionTime = Date.now();
-                this.level++;
+                this.gameState.incrementLevel();
                 // Increase alien speed by 25% each level
-                this.alienSpeed = 0.25 * (1 + (this.level - 1) * 0.25);
+                this.alienSpeed = 0.25 * (1 + (this.gameState.level - 1) * 0.25);
                 // Clear all bullets and reset game state when transitioning to next level
                 this.playerBullets = [];
                 this.alienBullets = [];
                 // Initialize new aliens for the next level
-                if (this.level < 4) {
+                if (this.gameState.level < 4) {
                     this.initializeAliens();
                 }
-            } else if (!this.isHeartbeatPlaying && !this.levelTransition) {
+            } else if (!this.gameState.levelTransition && Date.now() - this.lastHeartbeatTime > this.heartbeatCooldown) {
                 this.playHeartbeatSound();
+                this.lastHeartbeatTime = Date.now();
             }
 
             // Check alien bullets hitting spaceship
             this.alienBullets = this.alienBullets.filter(bullet => {
                 if (bullet.x >= this.spaceshipX && bullet.x < this.spaceshipX + 5 &&
                     bullet.y >= this.spaceshipY && bullet.y < this.spaceshipY + 5) {
-                    this.lives--;
-                    if (this.lives <= 0) {
-                        this.gameOver = true;
+                    this.gameState.decrementLives();
+                    if (this.gameState.lives <= 0) {
+                        this.gameState.gameOver = true;
                         this.playExplosionSound();
                     }
                     return false; // Remove the bullet
@@ -594,8 +393,8 @@ export class PixelDisplay {
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
 
-        if (this.gameOver) {
-            if (this.gameWon) {
+        if (this.gameState.gameOver) {
+            if (this.gameState.isBossLevel && this.gameState.bossHealth <= 0) {
                 // Draw pixelated YOU WIN text
                 this.ctx.fillStyle = '#0F0';
                 
@@ -799,20 +598,20 @@ export class PixelDisplay {
             return;
         }
 
-        if (this.levelTransition) {
+        if (this.gameState.levelTransition) {
             // Draw level transition message
             this.ctx.fillStyle = '#0F0';
-            const levelText = `LEVEL ${this.level}`;
+            const levelText = `LEVEL ${this.gameState.level}`;
             this.ctx.font = '8px monospace';
             this.ctx.textAlign = 'center';
             this.ctx.fillText(levelText, this.displayWidth / 2, this.displayHeight / 2);
 
             // After 2 seconds, start the next level
             if (Date.now() - this.levelTransitionTime > 2000) {
-                this.levelTransition = false;
+                this.gameState.levelTransition = false;
                 this.initializeAliens();
                 // Start heartbeat after level transition ends
-                if (this.level < 4) {
+                if (!this.gameState.isBossLevel) {
                     this.playHeartbeatSound();
                 }
                 // Reset spaceship position to center
@@ -823,7 +622,7 @@ export class PixelDisplay {
 
         // Draw lives indicator
         this.ctx.fillStyle = '#0F0';
-        for (let i = 0; i < this.lives; i++) {
+        for (let i = 0; i < this.gameState.lives; i++) {
             // Draw a small spaceship for each life
             this.ctx.fillRect(2 + (i * 6), 2, 1, 1);
             this.ctx.fillRect(2 + (i * 6), 3, 3, 1);
@@ -844,7 +643,7 @@ export class PixelDisplay {
             this.ctx.fillRect(bullet.x, bullet.y, 1, 1);
         }
 
-        if (this.level === 4) {
+        if (this.gameState.isBossLevel) {
             // Draw boss health bar
             this.ctx.fillStyle = '#0F0';
             const healthBarWidth = 30;
@@ -858,7 +657,7 @@ export class PixelDisplay {
             
             // Draw current health
             this.ctx.fillStyle = '#0F0';
-            const currentHealthWidth = (this.bossHealth / 50) * healthBarWidth;
+            const currentHealthWidth = (this.gameState.bossHealth / 50) * healthBarWidth;
             this.ctx.fillRect(healthBarX, healthBarY, currentHealthWidth, healthBarHeight);
 
             // Draw boss crab
@@ -877,7 +676,7 @@ export class PixelDisplay {
             }
 
             // Play crab sound when boss first appears
-            if (!this.isCrabSoundPlaying && this.bossHealth === 50) {
+            if (!this.gameState.levelTransition && this.gameState.bossHealth === 50) {
                 this.playCrabSound();
             }
         } else {
@@ -923,28 +722,13 @@ export class PixelDisplay {
     }
 
     private restartGame(): void {
-        // Reset game state
-        this.gameOver = false;
-        this.gameWon = false;
-        this.level = 1;
-        this.levelTransition = false;
-        this.lives = 5;
-        this.spaceshipX = 32; // Center position
+        this.gameState.reset();
+        this.aliens = [];
         this.playerBullets = [];
         this.alienBullets = [];
-        this.lastShotTime = 0;
-        this.alienSpeed = 0.25; // Reset to base speed
-        
-        // Stop any existing sounds
-        this.stopHeartbeatSound();
-        this.stopCrabSound();
-        this.stopVictorySound();
-        
-        // Reinitialize aliens
-        this.aliens = [];
         this.initializeAliens();
-        this.playHeartbeatSound();
-        this.bossHealth = 50;
+        this.spaceshipX = 32;
+        this.spaceshipY = 27;
         this.bossX = 0;
         this.bossY = 2;
         this.bossDirection = 1;
