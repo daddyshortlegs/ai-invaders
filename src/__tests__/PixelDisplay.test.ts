@@ -15,6 +15,76 @@ describe('PixelDisplay', () => {
     // Get mocked canvas and context
     mockCanvas = document.getElementById('canvas') as HTMLCanvasElement;
     mockCtx = mockCanvas.getContext('2d')!;
+
+    // Set display width
+    // @ts-ignore - accessing private property for testing
+    display.displayWidth = 64;
+
+    // Mock audio context and its nodes
+    const mockGainNode = {
+      gain: {
+        value: 0,
+        setValueAtTime: jest.fn(),
+        linearRampToValueAtTime: jest.fn(),
+        exponentialRampToValueAtTime: jest.fn(),
+        defaultValue: 1,
+        minValue: 0,
+        maxValue: 1,
+        automationRate: 'a-rate' as AutomationRate
+      },
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+      channelCount: 2,
+      channelCountMode: 'max' as ChannelCountMode,
+      channelInterpretation: 'speakers' as ChannelInterpretation,
+      context: {} as AudioContext,
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn()
+    } as unknown as GainNode;
+
+    const mockOscillator = {
+      type: 'sine',
+      frequency: {
+        setValueAtTime: jest.fn()
+      },
+      connect: jest.fn(),
+      start: jest.fn(),
+      stop: jest.fn(),
+      detune: {} as AudioParam,
+      setPeriodicWave: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      channelCount: 2,
+      channelCountMode: 'max' as ChannelCountMode,
+      channelInterpretation: 'speakers' as ChannelInterpretation,
+      context: {} as AudioContext,
+      numberOfInputs: 0,
+      numberOfOutputs: 1
+    } as unknown as OscillatorNode;
+
+    const mockDestination = {
+      maxChannelCount: 2,
+      channelCount: 2,
+      channelCountMode: 'max' as ChannelCountMode,
+      channelInterpretation: 'speakers' as ChannelInterpretation,
+      context: {} as AudioContext,
+      numberOfInputs: 1,
+      numberOfOutputs: 0
+    } as unknown as AudioDestinationNode;
+
+    // @ts-ignore - accessing private property for testing
+    display.audioContext = {
+      createGain: jest.fn(() => mockGainNode),
+      createOscillator: jest.fn(() => mockOscillator),
+      currentTime: 0,
+      destination: mockDestination
+    } as unknown as AudioContext;
+
+    // @ts-ignore - accessing private property for testing
+    display.heartbeatGainNode = mockGainNode;
   });
 
   describe('Initialization', () => {
@@ -29,8 +99,14 @@ describe('PixelDisplay', () => {
       expect(aliens.length).toBe(10); // 2 rows of 5 aliens
       
       // Check first alien position
-      expect(aliens[0].x).toBeGreaterThan(0);
-      expect(aliens[0].y).toBe(2);
+      // @ts-ignore - accessing private property for testing
+      const spacingX = display.displayWidth / (5 + 1); // displayWidth / (cols + 1)
+      expect(aliens[0].x).toBeCloseTo(spacingX, 0); // First alien starts at spacingX
+      expect(aliens[0].y).toBe(2); // First row starts at y=2
+      
+      // Check second row first alien
+      expect(aliens[5].x).toBeCloseTo(spacingX, 0); // Second row first alien starts at spacingX
+      expect(aliens[5].y).toBe(8); // Second row starts at y=8 (2 + 6)
     });
   });
 
@@ -176,34 +252,94 @@ describe('PixelDisplay', () => {
 
   describe('Collision Detection', () => {
     it('should detect collision between bullet and alien', () => {
-      // Mock audio context methods
+      // Mock audio nodes
       const mockGainNode = {
         gain: {
+          value: 0,
           setValueAtTime: jest.fn(),
           linearRampToValueAtTime: jest.fn(),
-          exponentialRampToValueAtTime: jest.fn()
+          exponentialRampToValueAtTime: jest.fn(),
+          defaultValue: 1,
+          minValue: 0,
+          maxValue: 1,
+          automationRate: 'a-rate' as AutomationRate
         },
-        connect: jest.fn()
-      };
-      
+        connect: jest.fn(),
+        disconnect: jest.fn(),
+        channelCount: 2,
+        channelCountMode: 'max' as ChannelCountMode,
+        channelInterpretation: 'speakers' as ChannelInterpretation,
+        context: {} as AudioContext,
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn()
+      } as unknown as GainNode;
+
+      const mockOscillator = {
+        type: 'sine',
+        frequency: {
+          value: 0,
+          setValueAtTime: jest.fn(),
+          defaultValue: 440,
+          minValue: 0,
+          maxValue: 24000,
+          automationRate: 'a-rate' as AutomationRate
+        },
+        connect: jest.fn(),
+        disconnect: jest.fn(),
+        start: jest.fn(),
+        stop: jest.fn(),
+        setPeriodicWave: jest.fn(),
+        channelCount: 2,
+        channelCountMode: 'max' as ChannelCountMode,
+        channelInterpretation: 'speakers' as ChannelInterpretation,
+        context: {} as AudioContext,
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn()
+      } as unknown as OscillatorNode;
+
+      // Mock all audio nodes
       // @ts-ignore - accessing private property for testing
-      display.audioContext.createGain = jest.fn(() => mockGainNode);
-      
+      display.heartbeatGainNode = mockGainNode;
+      // @ts-ignore - accessing private property for testing
+      display.heartbeatOscillator = mockOscillator;
+      // @ts-ignore - accessing private property for testing
+      display.gainNode = mockGainNode;
+      // @ts-ignore - accessing private property for testing
+      display.oscillator = mockOscillator;
+      // @ts-ignore - accessing private property for testing
+      display.crabGainNode = mockGainNode;
+      // @ts-ignore - accessing private property for testing
+      display.crabOscillator = mockOscillator;
+      // @ts-ignore - accessing private property for testing
+      display.victoryGainNode = mockGainNode;
+      // @ts-ignore - accessing private property for testing
+      display.victoryOscillator = mockOscillator;
+
+      // Set up game state
+      // @ts-ignore - accessing private property for testing
+      display.level = 1; // Make sure we're not in boss level
+      // @ts-ignore - accessing private property for testing
+      display.levelTransition = false;
+      // @ts-ignore - accessing private property for testing
+      display.isHeartbeatPlaying = false;
+
       // Mock initializeAliens to prevent automatic alien creation
       // @ts-ignore - accessing private method for testing
       const originalInitializeAliens = display.initializeAliens;
       // @ts-ignore - accessing private method for testing
       display.initializeAliens = jest.fn();
-      
-      // Reset game state
-      // @ts-ignore - accessing private method for testing
-      display.restartGame();
-      
+
       // Set up collision scenario with a single alien and bullet
       // @ts-ignore - accessing private property for testing
       display.aliens = [{ x: 8, y: 4, direction: 1, lastShotTime: 0 }];
       // @ts-ignore - accessing private property for testing
-      display.playerBullets = [{ x: 10, y: 5 }];
+      display.playerBullets = [{ x: 8, y: 4 }]; // Exact collision
       
       // @ts-ignore - accessing private method for testing
       display.checkCollisions();
@@ -212,7 +348,11 @@ describe('PixelDisplay', () => {
       expect(display.aliens.length).toBe(0);
       // @ts-ignore - accessing private property for testing
       expect(display.playerBullets.length).toBe(0);
-      
+      // @ts-ignore - accessing private property for testing
+      expect(display.levelTransition).toBe(true);
+      // @ts-ignore - accessing private property for testing
+      expect(display.level).toBe(2);
+
       // Restore original initializeAliens
       // @ts-ignore - accessing private method for testing
       display.initializeAliens = originalInitializeAliens;
@@ -248,6 +388,8 @@ describe('PixelDisplay', () => {
       
       // @ts-ignore - accessing private property for testing
       expect(display.gameOver).toBe(false);
+      // @ts-ignore - accessing private property for testing
+      expect(display.level).toBe(1);
       // @ts-ignore - accessing private property for testing
       expect(display.lives).toBe(5);
     });
