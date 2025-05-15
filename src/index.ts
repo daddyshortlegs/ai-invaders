@@ -93,8 +93,8 @@ export class PixelDisplay {
         // Clear existing aliens
         this.aliens = [];
         
-        // Create a grid of 10 aliens (2 rows of 5)
-        const rows = 2;
+        // Create a grid of aliens (2 rows for levels 1-3, 3 rows for level 4+)
+        const rows = this.gameState.level >= 4 ? 3 : 2;
         const cols = 5;
         const spacingX = this.displayWidth / (cols + 1); // Evenly space aliens horizontally
         const startY = 2; // Start a bit below the top
