@@ -28,9 +28,9 @@ export class GameState implements IGameState {
 
   incrementLevel(): void {
     this.level++;
-    if (this.level === 4) {
+    if (this.level === 8) {
       this.isBossLevel = true;
-      this.bossHealth = 10;
+      this.bossHealth = 50;
     } else {
       this.isBossLevel = false;
     }

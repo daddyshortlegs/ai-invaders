@@ -130,7 +130,7 @@ export class PixelDisplay {
             
             // Cheat code to jump to boss battle
             if (e.key.toLowerCase() === 'c') {
-                this.gameState.level = 4;
+                this.gameState.level = 8;
                 this.gameState.levelTransition = true;
                 this.gameState.isBossLevel = true;
                 this.aliens = []; // Clear regular aliens
@@ -208,7 +208,7 @@ export class PixelDisplay {
     }
 
     private updateAliens(): void {
-        if (this.gameState.level === 4) {
+        if (this.gameState.level === 8) {
             // Update boss movement
             this.bossX += this.bossSpeed * this.bossDirection;
             if (this.bossX <= 0 || this.bossX >= this.displayWidth - 28) { // Adjusted for new size
@@ -364,7 +364,7 @@ export class PixelDisplay {
                 this.playerBullets = [];
                 this.alienBullets = [];
                 // Initialize new aliens for the next level
-                if (this.gameState.level < 4) {
+                if (this.gameState.level < 8) {
                     this.initializeAliens();
                 }
             } else if (!this.gameState.levelTransition && Date.now() - this.lastHeartbeatTime > this.heartbeatCooldown) {
