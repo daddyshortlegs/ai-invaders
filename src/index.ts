@@ -37,6 +37,12 @@ export class PixelDisplay {
     private gameWon: boolean = false;
     private lastHeartbeatTime: number = 0;
     private heartbeatCooldown: number = 1000; // milliseconds between heartbeats
+    private explosions: { x: number, y: number, frame: number, isPlayer: boolean }[] = [];  // Modified to include player explosions
+    private explosionFrames: number = 5;
+    private playerExplosionFrames: number = 10;  // Longer explosion for player
+    private playerRespawnTime: number = 2000;  // 2 seconds respawn delay
+    private playerInvulnerable: boolean = false;
+    private playerRespawnTimer: number = 0;
 
     // Spaceship bitmap (5x5 pixels)
     private spaceship: number[][] = [
@@ -130,7 +136,7 @@ export class PixelDisplay {
             
             // Cheat code to jump to boss battle
             if (e.key.toLowerCase() === 'c') {
-                this.gameState.level = 8;
+                this.gameState.level = 16;
                 this.gameState.levelTransition = true;
                 this.gameState.isBossLevel = true;
                 this.aliens = []; // Clear regular aliens
@@ -154,7 +160,7 @@ export class PixelDisplay {
     }
 
     private shoot(): void {
-        if (Date.now() - this.lastShotTime <= this.shotCooldown) {
+        if (this.playerInvulnerable || Date.now() - this.lastShotTime <= this.shotCooldown) {
             return;
         }
         
@@ -184,6 +190,15 @@ export class PixelDisplay {
     }
 
     private updateSpaceshipPosition(): void {
+        // Handle respawn timer
+        if (this.playerInvulnerable) {
+            if (Date.now() - this.playerRespawnTimer >= this.playerRespawnTime) {
+                this.playerInvulnerable = false;
+                this.spaceshipX = 32;  // Reset to center
+            }
+            return;  // Don't allow movement while invulnerable
+        }
+
         // Only allow horizontal movement
         if (this.keys['ArrowLeft'] && this.spaceshipX > 0) {
             this.spaceshipX -= 1;
@@ -251,7 +266,7 @@ export class PixelDisplay {
                 }
 
                 // Random alien shooting
-                if (Math.random() < 0.01) { // 1% chance per frame
+                if (Math.random() < 0.04) { // Increased from 0.02 to 0.04 (4% chance per frame)
                     const randomAlien = this.aliens[Math.floor(Math.random() * this.aliens.length)];
                     this.alienBullets.push({
                         x: randomAlien.x + 2,
@@ -342,6 +357,13 @@ export class PixelDisplay {
                     const alien = this.aliens[ai];
                     if (bullet.x >= alien.x && bullet.x < alien.x + 5 &&
                         bullet.y >= alien.y && bullet.y < alien.y + 5) {
+                        // Add explosion at alien position
+                        this.explosions.push({
+                            x: alien.x,
+                            y: alien.y,
+                            frame: 0,
+                            isPlayer: false
+                        });
                         // Remove the alien and bullet
                         this.aliens.splice(ai, 1);
                         this.playerBullets.splice(bi, 1);
@@ -364,8 +386,15 @@ export class PixelDisplay {
                 this.playerBullets = [];
                 this.alienBullets = [];
                 // Initialize new aliens for the next level
-                if (this.gameState.level < 8) {
+                if (this.gameState.level < 16) {
                     this.initializeAliens();
+                } else {
+                    this.gameState.isBossLevel = true;
+                    this.gameState.bossHealth = 50; // Reset boss health
+                    this.bossX = 0; // Reset boss position
+                    this.bossY = 2;
+                    this.bossDirection = 1;
+                    this.bossLastShotTime = 0;
                 }
             } else if (!this.gameState.levelTransition && Date.now() - this.lastHeartbeatTime > this.heartbeatCooldown) {
                 this.playHeartbeatSound();
@@ -374,12 +403,22 @@ export class PixelDisplay {
 
             // Check alien bullets hitting spaceship
             this.alienBullets = this.alienBullets.filter(bullet => {
-                if (bullet.x >= this.spaceshipX && bullet.x < this.spaceshipX + 5 &&
+                if (!this.playerInvulnerable && 
+                    bullet.x >= this.spaceshipX && bullet.x < this.spaceshipX + 5 &&
                     bullet.y >= this.spaceshipY && bullet.y < this.spaceshipY + 5) {
+                    // Add player explosion
+                    this.explosions.push({
+                        x: this.spaceshipX,
+                        y: this.spaceshipY,
+                        frame: 0,
+                        isPlayer: true
+                    });
                     this.gameState.decrementLives();
+                    this.playerInvulnerable = true;
+                    this.playerRespawnTimer = Date.now();
+                    this.playExplosionSound();
                     if (this.gameState.lives <= 0) {
                         this.gameState.gameOver = true;
-                        this.playExplosionSound();
                     }
                     return false; // Remove the bullet
                 }
@@ -390,8 +429,30 @@ export class PixelDisplay {
 
     private drawDisplay(): void {
         // Clear the display
-        this.ctx.fillStyle = '#000';
+        this.ctx.fillStyle = '#001f3f';
         this.ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
+
+        // Draw explosions
+        this.ctx.fillStyle = '#0F0';
+        for (let i = this.explosions.length - 1; i >= 0; i--) {
+            const explosion = this.explosions[i];
+            const maxFrames = explosion.isPlayer ? this.playerExplosionFrames : this.explosionFrames;
+            const size = explosion.isPlayer ? 8 - explosion.frame : 5 - explosion.frame;
+            const offset = size / 2;
+            
+            // Draw explosion pattern
+            this.ctx.fillRect(explosion.x + offset, explosion.y + offset, size, size);
+            this.ctx.fillRect(explosion.x + offset - 2, explosion.y + offset, 1, size);
+            this.ctx.fillRect(explosion.x + offset + size + 1, explosion.y + offset, 1, size);
+            this.ctx.fillRect(explosion.x + offset, explosion.y + offset - 2, size, 1);
+            this.ctx.fillRect(explosion.x + offset, explosion.y + offset + size + 1, size, 1);
+            
+            // Update explosion frame
+            explosion.frame++;
+            if (explosion.frame >= maxFrames) {
+                this.explosions.splice(i, 1);
+            }
+        }
 
         if (this.gameState.gameOver) {
             if (this.gameState.isBossLevel && this.gameState.bossHealth <= 0) {
@@ -698,17 +759,20 @@ export class PixelDisplay {
             }
         }
 
-        // Draw the spaceship
-        this.ctx.fillStyle = '#0F0';
-        for (let y = 0; y < this.spaceship.length; y++) {
-            for (let x = 0; x < this.spaceship[0].length; x++) {
-                if (this.spaceship[y][x] === 1) {
-                    this.ctx.fillRect(
-                        this.spaceshipX + x,
-                        this.spaceshipY + y,
-                        this.pixelSize,
-                        this.pixelSize
-                    );
+        // Only draw spaceship if not invulnerable
+        if (!this.playerInvulnerable) {
+            // Draw the spaceship
+            this.ctx.fillStyle = '#0F0';
+            for (let y = 0; y < this.spaceship.length; y++) {
+                for (let x = 0; x < this.spaceship[0].length; x++) {
+                    if (this.spaceship[y][x] === 1) {
+                        this.ctx.fillRect(
+                            this.spaceshipX + x,
+                            this.spaceshipY + y,
+                            this.pixelSize,
+                            this.pixelSize
+                        );
+                    }
                 }
             }
         }
@@ -726,6 +790,8 @@ export class PixelDisplay {
         this.aliens = [];
         this.playerBullets = [];
         this.alienBullets = [];
+        this.alienSpeed = 0.25;  // Reset to initial speed
+        this.alienShotChance = 0.05;  // Reset to initial shooting chance
         this.initializeAliens();
         this.spaceshipX = 32;
         this.spaceshipY = 27;
