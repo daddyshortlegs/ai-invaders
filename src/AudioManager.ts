@@ -50,8 +50,13 @@ export class AudioManager implements IAudioManager {
           break;
         case 'explosion':
           oscillator.type = 'sawtooth';
-          oscillator.frequency.setValueAtTime(220, this.audioContext.currentTime);
-          gainNode.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+          // Start with a low frequency and sweep even lower for a crash effect
+          const crashTime = this.audioContext.currentTime;
+          oscillator.frequency.setValueAtTime(110, crashTime);
+          oscillator.frequency.exponentialRampToValueAtTime(20, crashTime + 0.2);
+          // Start loud and quickly fade out
+          gainNode.gain.setValueAtTime(0.3, crashTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, crashTime + 0.2);
           break;
         case 'heartbeat':
           oscillator.type = 'sine';
